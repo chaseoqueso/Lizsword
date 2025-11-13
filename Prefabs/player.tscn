@@ -1,4 +1,4 @@
-[gd_scene load_steps=18 format=3 uid="uid://ctoqfuxwrv33e"]
+[gd_scene load_steps=20 format=3 uid="uid://ctoqfuxwrv33e"]
 
 [ext_resource type="Texture2D" uid="uid://ovagjmcr0fkb" path="res://Art/Character/Sonic Sprites/SonicFall.png" id="1_b30ri"]
 [ext_resource type="Script" uid="uid://c825xmg57rah8" path="res://Scripts/player.gd" id="1_ms580"]
@@ -12,12 +12,14 @@
 [ext_resource type="Texture2D" uid="uid://bd3dphxpr8l2v" path="res://Art/Character/Sonic Sprites/SonicSpin1.png" id="9_and0b"]
 [ext_resource type="Texture2D" uid="uid://ceeppcwc27qso" path="res://Art/Character/Sonic Sprites/SonicSpin5.png" id="10_405c5"]
 [ext_resource type="Texture2D" uid="uid://5ihwx1d8m01b" path="res://Art/Character/Sonic Sprites/SonicSpin6.png" id="11_i3mxk"]
+[ext_resource type="Texture2D" uid="uid://ne5scffa2dji" path="res://Art/Character/Sonic Sprites/SonicWall.png" id="11_q7l0e"]
 [ext_resource type="Texture2D" uid="uid://bhmnj7fr0i2dl" path="res://Art/Character/Sonic Sprites/SonicSpin7.png" id="12_qvmbc"]
 [ext_resource type="Texture2D" uid="uid://h1m086lftgq4" path="res://Art/Character/Sonic Sprites/SonicSpin8.png" id="13_qjulh"]
 [ext_resource type="Texture2D" uid="uid://bkgow2ixlesel" path="res://Art/Character/Sonic Sprites/SonicSpin9.png" id="14_evqxc"]
+[ext_resource type="Texture2D" uid="uid://d2bb3j1f3dqts" path="res://Art/Character/Sonic Sprites/SonicStance.png" id="17_0fs2y"]
 
 [sub_resource type="RectangleShape2D" id="RectangleShape2D_3icqa"]
-size = Vector2(30, 39)
+size = Vector2(31, 39)
 
 [sub_resource type="SpriteFrames" id="SpriteFrames_3icqa"]
 animations = [{
@@ -60,6 +62,14 @@ animations = [{
 }, {
 "frames": [{
 "duration": 1.0,
+"texture": ExtResource("11_q7l0e")
+}],
+"loop": true,
+"name": &"climb",
+"speed": 5.0
+}, {
+"frames": [{
+"duration": 1.0,
 "texture": ExtResource("1_b30ri")
 }],
 "loop": true,
@@ -97,6 +107,14 @@ animations = [{
 "loop": true,
 "name": &"run",
 "speed": 20.0
+}, {
+"frames": [{
+"duration": 1.0,
+"texture": ExtResource("17_0fs2y")
+}],
+"loop": true,
+"name": &"stance",
+"speed": 5.0
 }]
 
 [node name="Player" type="CharacterBody2D"]
@@ -110,6 +128,5 @@ shape = SubResource("RectangleShape2D_3icqa")
 [node name="AnimatedSprite2D" type="AnimatedSprite2D" parent="."]
 position = Vector2(0, -20)
 sprite_frames = SubResource("SpriteFrames_3icqa")
-animation = &"idle"
-frame_progress = 0.5009212
+animation = &"stance"
 offset = Vector2(0, 0.5)
