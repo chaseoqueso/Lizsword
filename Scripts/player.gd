@@ -8,36 +8,50 @@ extends CharacterBody2D
 @export var air_accel: float = 500
 @export var gravity: float = 200
 @export var jump_velocity: float = 100
+@export var coyote_time: float = 0.2
 
 @export_group("Climbing")
 @export var climb_speed: float = 100
 @export var wall_jump_velocity: float = 100
 @export var wall_jump_angle: float = 45
 @export var ceil_jump_velocity: float = 100
+@export var climb_jump_coyote_time: float = 0.2
 
 @export_group("Charge Attack")
 @export var charge_time: float = 1
 @export var min_launch_velocity: float = 200
 @export var max_launch_velocity: float = 500
 @export var final_bounce_velocity: float = 200
-@export var max_air_charge_velocity: float = 50
+@export var air_charge_slowdown_factor: float = 0.5
 
 enum PlayerState { IDLE, RUNNING, CHARGING, LAUNCHING, WALL_CLIMB, CEIL_CLIMB }
 
 var current_state: PlayerState
-var initial_gravity: float
 var remaining_bounces: int
 var current_charge: float
+var current_coyote_time: float
+var current_wall_coyote_time: float
 var wall_normal: Vector2
+var air_charge_speed: float
+var was_on_floor: bool
 
 func _ready() -> void:
-	initial_gravity = gravity
 	current_state = PlayerState.IDLE
 	remaining_bounces = 0
 	current_charge = 0
+	air_charge_speed = -1
+	current_coyote_time = 0
+	current_wall_coyote_time = 0
+	was_on_floor = false
 
 func _process(delta: float) -> void:
 	var inputX := Input.get_action_strength("right") - Input.get_action_strength("left")
+
+	# Tick down coyote time
+	if(current_coyote_time > 0):
+		current_coyote_time -= delta
+	if(current_wall_coyote_time > 0):
+		current_wall_coyote_time -= delta
 
 	# Animation Selection
 	$AnimatedSprite2D.rotation = 0
@@ -93,10 +107,15 @@ func _physics_process(delta: float) -> void:
 	var inputY := Input.get_action_strength("up") - Input.get_action_strength("down")
 	var current_accel := accel if is_on_floor() else air_accel 
 
-	var apply_friction := func():
+	var apply_friction := func(affect_y := false):
 		velocity.x -= sign(velocity.x) * current_accel * delta
 		if abs(velocity.x) <= current_accel * delta:
 			velocity.x = 0
+
+		if affect_y:
+			velocity.y -= sign(velocity.y) * current_accel * delta
+			if abs(velocity.y) <= current_accel * delta:
+				velocity.y = 0
 
 	var apply_gravity := func(g = gravity):
 		velocity.y += g * delta
@@ -107,21 +126,20 @@ func _physics_process(delta: float) -> void:
 		if current_charge > 1:
 			current_charge = 1
 		
-		if is_on_floor():
+		if is_on_floor() or is_on_wall() or is_on_ceiling():
 			apply_friction.call()
 		else:
 			# Apply a slow-mo effect to the player's movement by decreasing
 			# air resistance and gravity
-
 			apply_gravity.call(gravity / 2)
+			current_accel = air_accel/5
 
-			# current_accel = air_accel/5
-
-			# # Instead of the velocity decreasing all the way to 0, we have a minimum value
-			# if velocity.x > max_air_charge_velocity:
-			# 	apply_friction.call()
-			# else:
-			# 	velocity.x = sign(velocity.x) * max_air_charge_velocity
+			# Instead of the velocity decreasing all the way to 0, 
+			# if we have a target value, approach that target
+			if air_charge_speed > 0 and velocity.length() > air_charge_speed:
+				apply_friction.call(true)
+			else:
+				air_charge_speed = -1
 
 	elif is_climbing():
 		# Always allow movement in all directions while climbing,
@@ -131,23 +149,27 @@ func _physics_process(delta: float) -> void:
 
 		# Apply a small velocity in the direction of the wall/ceiling
 		# to keep sticking to it, if not pressing perpendicular movement
-		if inputX == 0 and current_state == PlayerState.WALL_CLIMB:
+		if inputX == 0 and inputY != 0 and current_state == PlayerState.WALL_CLIMB:
 			velocity.x = -wall_normal.x
 		elif inputY == 0 and current_state == PlayerState.CEIL_CLIMB:
 			velocity.y = -1
-		print(velocity)
 			
 	elif current_state != PlayerState.LAUNCHING:
 		# Apply gravity
 		apply_gravity.call()
 
+		if is_on_floor():
+			current_coyote_time = coyote_time
+
 		# Handle movement input
-		if inputX == 0 and is_on_floor():
+		if is_on_floor() and inputX == 0:
 			apply_friction.call()
 		else:
 			velocity.x += inputX * current_accel * delta
 			if abs(velocity.x) > max_speed:
 				velocity.x = sign(velocity.x) * max_speed
+
+	# print(velocity)
 
 	##########################################
 	### Apply Velocity & Handle Collisions ###
@@ -155,7 +177,6 @@ func _physics_process(delta: float) -> void:
 
 	# Move the player
 	if current_state != PlayerState.LAUNCHING:
-		# print(str(current_state) + " " + str(velocity))
 		move_and_slide()
 		if is_climbing() and not(is_on_wall() or is_on_ceiling()):
 			change_state(PlayerState.IDLE)
@@ -209,11 +230,11 @@ func _input(event):
 		remaining_bounces = 3
 		change_state(PlayerState.LAUNCHING)
 
-	if event.is_action_pressed("jump") and (is_on_floor() or is_climbing()):
-		if current_state == PlayerState.WALL_CLIMB:
-			velocity = Vector2.from_angle(-wall_jump_angle) * wall_jump_velocity
+	if event.is_action_pressed("jump") and ((is_on_floor() or current_coyote_time > 0) or (is_climbing() or current_wall_coyote_time > 0)):
+		if current_state == PlayerState.WALL_CLIMB or current_wall_coyote_time > 0:
+			velocity = Vector2.from_angle(deg_to_rad(-wall_jump_angle)) * wall_jump_velocity
 			velocity.x *= get_wall_normal().x 
-		elif is_on_floor():
+		elif is_on_floor() or current_coyote_time > 0:
 			velocity.y = -jump_velocity
 		elif current_state == PlayerState.CEIL_CLIMB:
 			velocity.y = ceil_jump_velocity
@@ -224,13 +245,20 @@ func _input(event):
 func change_state(new_state: PlayerState):
 	if current_state == new_state:
 		return
-	current_state = new_state
+	
+	# If fell off of wall, allow coyote time to wall jump
+	if is_climbing() and new_state == PlayerState.IDLE:
+		current_wall_coyote_time = climb_jump_coyote_time
 	
 	if new_state == PlayerState.WALL_CLIMB:
 		wall_normal = get_wall_normal()
 	elif new_state == PlayerState.CHARGING:
+		# Set slow-mo velocity if midair charging
 		if not is_on_floor():
-			velocity *= 0.5
+			air_charge_speed = velocity.length() * air_charge_slowdown_factor
+	
+	print("State Change: " + str(current_state) + " to " + str(new_state))
+	current_state = new_state
 
 # func _on_animated_sprite_2d_animation_finished() -> void:
 #     PlayerGlobals.is_attacking = false

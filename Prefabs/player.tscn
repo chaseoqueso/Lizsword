@@ -122,13 +122,15 @@ collision_mask = 3
 script = ExtResource("1_ms580")
 max_speed = 250.0
 accel = 1000.0
-gravity = 400.0
-jump_velocity = 250.0
-wall_jump_velocity = 250.0
+gravity = 550.0
+jump_velocity = 275.0
+coyote_time = 0.075
+wall_jump_velocity = 300.0
+wall_jump_angle = 60.0
+climb_jump_coyote_time = 0.1
 min_launch_velocity = 300.0
 max_launch_velocity = 750.0
 final_bounce_velocity = 100.0
-max_air_charge_velocity = 50.0
 
 [node name="CollisionShape2D" type="CollisionShape2D" parent="."]
 position = Vector2(0, -19.5)
