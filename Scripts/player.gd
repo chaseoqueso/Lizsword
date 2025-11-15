@@ -1,16 +1,26 @@
 extends CharacterBody2D
 
-@export_group("Physics")
+@export_group("Movement")
 @export var max_speed: float = 100
 @export var accel: float = 500
+
+@export_group("Aerial Movement")
+@export var air_accel: float = 500
 @export var gravity: float = 200
 @export var jump_velocity: float = 100
+
+@export_group("Climbing")
 @export var climb_speed: float = 100
+@export var wall_jump_velocity: float = 100
+@export var wall_jump_angle: float = 45
+@export var ceil_jump_velocity: float = 100
 
 @export_group("Charge Attack")
-@export var charge_rate: float = 1
-@export var max_charge: float = 2
-@export var launch_velocity: float = 500
+@export var charge_time: float = 1
+@export var min_launch_velocity: float = 200
+@export var max_launch_velocity: float = 500
+@export var final_bounce_velocity: float = 200
+@export var max_air_charge_velocity: float = 50
 
 enum PlayerState { IDLE, RUNNING, CHARGING, LAUNCHING, WALL_CLIMB, CEIL_CLIMB }
 
@@ -30,13 +40,17 @@ func _process(delta: float) -> void:
 	var inputX := Input.get_action_strength("right") - Input.get_action_strength("left")
 
 	# Animation Selection
-	$AnimatedSprite2D.flip_v = false
 	$AnimatedSprite2D.rotation = 0
+	var reset_flip_v := true
+	var should_flip_h := false
+
 	if current_state == PlayerState.CHARGING:
-		if current_charge < max_charge:
+		if current_charge < 1:
 			$AnimatedSprite2D.play("charge")
 		else:
 			$AnimatedSprite2D.play("chargeMax")
+		reset_flip_v = false
+		$AnimatedSprite2D.flip_h = get_local_mouse_position().x < 0
 	elif current_state == PlayerState.LAUNCHING:
 		$AnimatedSprite2D.play("launch")
 		$AnimatedSprite2D.rotation = Vector2.UP.angle_to(velocity)
@@ -46,7 +60,8 @@ func _process(delta: float) -> void:
 	elif current_state == PlayerState.CEIL_CLIMB:
 		$AnimatedSprite2D.play("stance")
 		$AnimatedSprite2D.flip_v = true
-		$AnimatedSprite2D.flip_h = inputX < 0
+		reset_flip_v = false
+		should_flip_h = true
 	else:
 		if is_on_floor():
 			if inputX != 0:
@@ -60,8 +75,13 @@ func _process(delta: float) -> void:
 				$AnimatedSprite2D.play("jump")
 			else:
 				$AnimatedSprite2D.play("fall")
-	
+		should_flip_h = true
+
+	if should_flip_h and inputX != 0:
 		$AnimatedSprite2D.flip_h = inputX < 0
+
+	if reset_flip_v:
+		$AnimatedSprite2D.flip_v = false
 
 
 func _physics_process(delta: float) -> void:
@@ -71,11 +91,38 @@ func _physics_process(delta: float) -> void:
 
 	var inputX := Input.get_action_strength("right") - Input.get_action_strength("left")
 	var inputY := Input.get_action_strength("up") - Input.get_action_strength("down")
+	var current_accel := accel if is_on_floor() else air_accel 
+
+	var apply_friction := func():
+		velocity.x -= sign(velocity.x) * current_accel * delta
+		if abs(velocity.x) <= current_accel * delta:
+			velocity.x = 0
+
+	var apply_gravity := func(g = gravity):
+		velocity.y += g * delta
+
 	if current_state == PlayerState.CHARGING:
 		# Charge up
-		current_charge += charge_rate * delta
-		if current_charge > max_charge:
-			current_charge = max_charge
+		current_charge += delta / charge_time
+		if current_charge > 1:
+			current_charge = 1
+		
+		if is_on_floor():
+			apply_friction.call()
+		else:
+			# Apply a slow-mo effect to the player's movement by decreasing
+			# air resistance and gravity
+
+			apply_gravity.call(gravity / 2)
+
+			# current_accel = air_accel/5
+
+			# # Instead of the velocity decreasing all the way to 0, we have a minimum value
+			# if velocity.x > max_air_charge_velocity:
+			# 	apply_friction.call()
+			# else:
+			# 	velocity.x = sign(velocity.x) * max_air_charge_velocity
+
 	elif is_climbing():
 		# Always allow movement in all directions while climbing,
 		# worst case the player just falls off the wall
@@ -88,24 +135,19 @@ func _physics_process(delta: float) -> void:
 			velocity.x = -wall_normal.x
 		elif inputY == 0 and current_state == PlayerState.CEIL_CLIMB:
 			velocity.y = -1
-
-		print(str(current_state) + " " + str(velocity))
+		print(velocity)
 			
 	elif current_state != PlayerState.LAUNCHING:
 		# Apply gravity
-		velocity.y += gravity * delta
+		apply_gravity.call()
 
 		# Handle movement input
-		if inputX == 0:
-			if abs(velocity.x) <= accel * delta:
-				velocity.x = 0
-			else:
-				inputX = -sign(velocity.x)
-
-		velocity.x += inputX * accel * delta
-		if abs(velocity.x) > max_speed:
-			velocity.x = sign(velocity.x) * max_speed
-
+		if inputX == 0 and is_on_floor():
+			apply_friction.call()
+		else:
+			velocity.x += inputX * current_accel * delta
+			if abs(velocity.x) > max_speed:
+				velocity.x = sign(velocity.x) * max_speed
 
 	##########################################
 	### Apply Velocity & Handle Collisions ###
@@ -116,13 +158,12 @@ func _physics_process(delta: float) -> void:
 		# print(str(current_state) + " " + str(velocity))
 		move_and_slide()
 		if is_climbing() and not(is_on_wall() or is_on_ceiling()):
-			current_state = PlayerState.IDLE
+			change_state(PlayerState.IDLE)
 			wall_normal = Vector2.ZERO
 		elif is_on_wall() and inputX == -get_wall_normal().x:
-			current_state = PlayerState.WALL_CLIMB
-			wall_normal = get_wall_normal()
+			change_state(PlayerState.WALL_CLIMB)
 		elif is_on_ceiling() and inputY == -1:
-			current_state = PlayerState.CEIL_CLIMB
+			change_state(PlayerState.CEIL_CLIMB)
 			wall_normal = Vector2.ZERO
 	else: # Launching
 		var collision := move_and_collide(velocity * delta)
@@ -141,17 +182,21 @@ func _physics_process(delta: float) -> void:
 				data = tilemap.get_cell_tile_data(cell_pos)
 				print("Tile from velocity: " + str(tile_position))
 
-			if data.get_collision_polygons_count(1) > 0:
-				velocity = velocity.bounce(collision.get_normal())
-				remaining_bounces -= 1
+			if data != null:
+				if data.get_collision_polygons_count(1) > 0:
+					velocity = velocity.bounce(collision.get_normal())
+					remaining_bounces -= 1
 
-				if remaining_bounces <= 0:
-					change_state(PlayerState.IDLE)
-			else:
-				if collision.get_normal().x != 0:
-					change_state(PlayerState.WALL_CLIMB)
+					if remaining_bounces <= 0:
+						change_state(PlayerState.IDLE)
+						velocity = velocity.normalized() * final_bounce_velocity
 				else:
-					change_state(PlayerState.CEIL_CLIMB)
+					if collision.get_normal().x != 0:
+						velocity = -collision.get_normal()
+						move_and_slide()
+						change_state(PlayerState.WALL_CLIMB)
+					else:
+						change_state(PlayerState.CEIL_CLIMB)
 
 
 func _input(event):
@@ -159,20 +204,33 @@ func _input(event):
 		# PlayerGlobals.is_attacking = true
 		change_state(PlayerState.CHARGING)
 	elif event.is_action_released("attack") and current_state == PlayerState.CHARGING:     # If we are in the charge state but attack is not pressed, launch
-		velocity = get_local_mouse_position().normalized() * launch_velocity
+		velocity = get_local_mouse_position().normalized() * lerpf(min_launch_velocity, max_launch_velocity, current_charge)
 		current_charge = 0
 		remaining_bounces = 3
 		change_state(PlayerState.LAUNCHING)
 
 	if event.is_action_pressed("jump") and (is_on_floor() or is_climbing()):
-		velocity.y = -jump_velocity
-		gravity = initial_gravity
+		if current_state == PlayerState.WALL_CLIMB:
+			velocity = Vector2.from_angle(-wall_jump_angle) * wall_jump_velocity
+			velocity.x *= get_wall_normal().x 
+		elif is_on_floor():
+			velocity.y = -jump_velocity
+		elif current_state == PlayerState.CEIL_CLIMB:
+			velocity.y = ceil_jump_velocity
+
 		$AnimatedSprite2D.play("jump")
+		change_state(PlayerState.IDLE)
 
 func change_state(new_state: PlayerState):
 	if current_state == new_state:
 		return
 	current_state = new_state
+	
+	if new_state == PlayerState.WALL_CLIMB:
+		wall_normal = get_wall_normal()
+	elif new_state == PlayerState.CHARGING:
+		if not is_on_floor():
+			velocity *= 0.5
 
 # func _on_animated_sprite_2d_animation_finished() -> void:
 #     PlayerGlobals.is_attacking = false
