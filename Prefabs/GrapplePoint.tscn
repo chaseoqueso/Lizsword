@@ -1,0 +1,17 @@
+[gd_scene load_steps=3 format=3 uid="uid://dojhsy2vr2iyt"]
+
+[ext_resource type="Texture2D" uid="uid://b6kgie6qx7wdb" path="res://Art/GrapplePoint.png" id="1_cfcxx"]
+
+[sub_resource type="CircleShape2D" id="CircleShape2D_cfcxx"]
+radius = 8.0
+
+[node name="GrapplePoint" type="Area2D"]
+collision_layer = 4
+
+[node name="CollisionShape2D" type="CollisionShape2D" parent="."]
+shape = SubResource("CircleShape2D_cfcxx")
+
+[node name="Sprite2D" type="Sprite2D" parent="."]
+texture = ExtResource("1_cfcxx")
+
+[connection signal="input_event" from="." to="." method="_on_input_event"]

@@ -4,6 +4,7 @@
 [ext_resource type="Script" uid="uid://c825xmg57rah8" path="res://Scripts/player.gd" id="1_ms580"]
 [ext_resource type="Texture2D" uid="uid://brbxxyq75wx24" path="res://Art/Character/Sonic Sprites/SonicIdle.png" id="1_y5hcb"]
 [ext_resource type="Texture2D" uid="uid://b5wijlgn12tfy" path="res://Art/Character/Sonic Sprites/SonicJump.png" id="2_2nftw"]
+[ext_resource type="Shape2D" uid="uid://chlqr3ux2ffqf" path="res://Prefabs/Player/playerDefaultCollider.tres" id="2_sf0qn"]
 [ext_resource type="Texture2D" uid="uid://66r1fanx82oh" path="res://Art/Character/Sonic Sprites/SonicRun.png" id="3_knrd4"]
 [ext_resource type="Texture2D" uid="uid://5ik8eg8k1fsx" path="res://Art/Character/Sonic Sprites/SonicLaunch.png" id="4_ms580"]
 [ext_resource type="Texture2D" uid="uid://c4adlcpbuq0ps" path="res://Art/Character/Sonic Sprites/SonicSpin4.png" id="6_q7l0e"]
@@ -17,9 +18,6 @@
 [ext_resource type="Texture2D" uid="uid://h1m086lftgq4" path="res://Art/Character/Sonic Sprites/SonicSpin8.png" id="13_qjulh"]
 [ext_resource type="Texture2D" uid="uid://bkgow2ixlesel" path="res://Art/Character/Sonic Sprites/SonicSpin9.png" id="14_evqxc"]
 [ext_resource type="Texture2D" uid="uid://d2bb3j1f3dqts" path="res://Art/Character/Sonic Sprites/SonicStance.png" id="17_0fs2y"]
-
-[sub_resource type="RectangleShape2D" id="RectangleShape2D_3icqa"]
-size = Vector2(31, 39)
 
 [sub_resource type="SpriteFrames" id="SpriteFrames_3icqa"]
 animations = [{
@@ -122,22 +120,24 @@ collision_mask = 3
 script = ExtResource("1_ms580")
 max_speed = 250.0
 accel = 1000.0
-gravity = 550.0
-jump_velocity = 275.0
-coyote_time = 0.075
-wall_jump_velocity = 300.0
-wall_jump_angle = 60.0
+gravity = 400.0
+jump_velocity = 250.0
+coyote_time = 0.1
+wall_jump_velocity = 250.0
 climb_jump_coyote_time = 0.1
 min_launch_velocity = 300.0
 max_launch_velocity = 750.0
 final_bounce_velocity = 100.0
 
 [node name="CollisionShape2D" type="CollisionShape2D" parent="."]
-position = Vector2(0, -19.5)
-shape = SubResource("RectangleShape2D_3icqa")
+shape = ExtResource("2_sf0qn")
+
+[node name="CollisionPolygon2D" type="CollisionPolygon2D" parent="."]
+polygon = PackedVector2Array(0, 11.5, -15.5, -4, 0, -19.5, 15.5, -4)
+disabled = true
 
 [node name="AnimatedSprite2D" type="AnimatedSprite2D" parent="."]
-position = Vector2(0, -20)
+position = Vector2(0, -0.5)
 sprite_frames = SubResource("SpriteFrames_3icqa")
-animation = &"stance"
+animation = &"idle"
 offset = Vector2(0, 0.5)

@@ -1,3 +1,4 @@
+class_name Player
 extends CharacterBody2D
 
 @export_group("Movement")
@@ -35,6 +36,7 @@ var wall_normal: Vector2
 var air_charge_speed: float
 var was_on_floor: bool
 
+
 func _ready() -> void:
 	current_state = PlayerState.IDLE
 	remaining_bounces = 0
@@ -43,6 +45,7 @@ func _ready() -> void:
 	current_coyote_time = 0
 	current_wall_coyote_time = 0
 	was_on_floor = false
+	PlayerGlobals.player_ref = self
 
 func _process(delta: float) -> void:
 	var inputX := Input.get_action_strength("right") - Input.get_action_strength("left")
@@ -67,10 +70,9 @@ func _process(delta: float) -> void:
 		$AnimatedSprite2D.flip_h = get_local_mouse_position().x < 0
 	elif current_state == PlayerState.LAUNCHING:
 		$AnimatedSprite2D.play("launch")
-		$AnimatedSprite2D.rotation = Vector2.UP.angle_to(velocity)
 	elif current_state == PlayerState.WALL_CLIMB:
 		$AnimatedSprite2D.play("climb")
-		$AnimatedSprite2D.flip_h = get_wall_normal().x < 0
+		$AnimatedSprite2D.flip_h = wall_normal.x < 0
 	elif current_state == PlayerState.CEIL_CLIMB:
 		$AnimatedSprite2D.play("stance")
 		$AnimatedSprite2D.flip_v = true
@@ -131,8 +133,9 @@ func _physics_process(delta: float) -> void:
 		else:
 			# Apply a slow-mo effect to the player's movement by decreasing
 			# air resistance and gravity
-			apply_gravity.call(gravity / 2)
-			current_accel = air_accel/5
+
+			if !is_mostly_on_wall() and !is_mostly_on_ceiling():
+				apply_gravity.call(gravity / 2)
 
 			# Instead of the velocity decreasing all the way to 0, 
 			# if we have a target value, approach that target
@@ -149,10 +152,12 @@ func _physics_process(delta: float) -> void:
 
 		# Apply a small velocity in the direction of the wall/ceiling
 		# to keep sticking to it, if not pressing perpendicular movement
-		if inputX == 0 and inputY != 0 and current_state == PlayerState.WALL_CLIMB:
-			velocity.x = -wall_normal.x
-		elif inputY == 0 and current_state == PlayerState.CEIL_CLIMB:
-			velocity.y = -1
+		if inputX != 0 or inputY != 0:
+			if inputX == 0 and current_state == PlayerState.WALL_CLIMB:
+				velocity.x = -wall_normal.x
+			elif inputY == 0 and current_state == PlayerState.CEIL_CLIMB:
+				velocity.y = -1
+			# print(velocity)
 			
 	elif current_state != PlayerState.LAUNCHING:
 		# Apply gravity
@@ -177,18 +182,20 @@ func _physics_process(delta: float) -> void:
 
 	# Move the player
 	if current_state != PlayerState.LAUNCHING:
+		rotation = 0
+		# print(str(current_state) + " " + str(velocity))
 		move_and_slide()
-		if is_climbing() and not(is_on_wall() or is_on_ceiling()):
+		if is_climbing() and not(is_mostly_on_wall() or is_mostly_on_ceiling()):
 			change_state(PlayerState.IDLE)
 			wall_normal = Vector2.ZERO
-		elif is_on_wall() and inputX == -get_wall_normal().x:
+		elif is_mostly_on_wall() and (inputX == -get_wall_normal().x or current_state == PlayerState.CEIL_CLIMB):
 			change_state(PlayerState.WALL_CLIMB)
-		elif is_on_ceiling() and inputY == -1:
+		elif is_mostly_on_ceiling() and (inputY == 1 or current_state == PlayerState.WALL_CLIMB):
 			change_state(PlayerState.CEIL_CLIMB)
 			wall_normal = Vector2.ZERO
 	else: # Launching
 		var collision := move_and_collide(velocity * delta)
-		if collision:
+		while collision:
 			var tilemap: TileMapLayer = collision.get_collider()
 
 			# Attempt to find the tile inward based on collision normal
@@ -203,21 +210,35 @@ func _physics_process(delta: float) -> void:
 				data = tilemap.get_cell_tile_data(cell_pos)
 				print("Tile from velocity: " + str(tile_position))
 
-			if data != null:
+			if data == null:
+				break
+			else:
 				if data.get_collision_polygons_count(1) > 0:
 					velocity = velocity.bounce(collision.get_normal())
+					rotation = Vector2.UP.angle_to(velocity)
 					remaining_bounces -= 1
 
 					if remaining_bounces <= 0:
 						change_state(PlayerState.IDLE)
-						velocity = velocity.normalized() * final_bounce_velocity
+						var up_boost := Vector2.UP * (collision.get_normal().dot(Vector2.UP) + 1) * 0.25
+						velocity = (velocity.normalized() + up_boost) * final_bounce_velocity
+						break
+						
+					collision = move_and_collide(velocity * delta)
 				else:
-					if collision.get_normal().x != 0:
-						velocity = -collision.get_normal()
-						move_and_slide()
+					if abs(collision.get_normal().dot(Vector2.UP)) < 0.5:
 						change_state(PlayerState.WALL_CLIMB)
 					else:
 						change_state(PlayerState.CEIL_CLIMB)
+					
+					rotation = 0
+					velocity = -collision.get_normal() * 10
+					move_and_slide()
+					wall_normal = get_wall_normal()
+					# print(current_state)
+					# print(velocity)
+					# print(wall_normal)
+					break
 
 
 func _input(event):
@@ -242,6 +263,13 @@ func _input(event):
 		$AnimatedSprite2D.play("jump")
 		change_state(PlayerState.IDLE)
 
+	if event.is_action_pressed("grapple"):
+		grapple(get_global_mouse_position())
+		pass
+	elif event.is_action_released("grapple"):
+		pass
+
+
 func change_state(new_state: PlayerState):
 	if current_state == new_state:
 		return
@@ -250,18 +278,64 @@ func change_state(new_state: PlayerState):
 	if is_climbing() and new_state == PlayerState.IDLE:
 		current_wall_coyote_time = climb_jump_coyote_time
 	
+	if current_state == PlayerState.LAUNCHING:
+		enable_launch_collider(false)
+
 	if new_state == PlayerState.WALL_CLIMB:
 		wall_normal = get_wall_normal()
 	elif new_state == PlayerState.CHARGING:
 		# Set slow-mo velocity if midair charging
 		if not is_on_floor():
 			air_charge_speed = velocity.length() * air_charge_slowdown_factor
-	
-	print("State Change: " + str(current_state) + " to " + str(new_state))
+	elif new_state == PlayerState.LAUNCHING:
+		rotation = Vector2.UP.angle_to(velocity)
+		enable_launch_collider()
+
 	current_state = new_state
 
-# func _on_animated_sprite_2d_animation_finished() -> void:
-#     PlayerGlobals.is_attacking = false
+func enable_launch_collider(enabled := true):
+	$CollisionPolygon2D.disabled = !enabled
+	$CollisionShape2D.disabled = enabled
+
+func grapple(grapple_point: Vector2):
+	var space_state := get_world_2d().direct_space_state
+	var query := PhysicsPointQueryParameters2D.new()
+	query.position = grapple_point
+	query.collide_with_areas = true
+	query.collision_mask = 1 << 2
+	var intersections := space_state.intersect_point(query)
+	for hit in intersections:
+		print(hit.collider)
+
+func ungrapple():
+	print("Release")
 
 func is_climbing():
 	return current_state == PlayerState.WALL_CLIMB or current_state == PlayerState.CEIL_CLIMB
+
+func is_mostly_on_wall():
+	if !is_on_wall():
+		return false
+
+	var space_state := get_world_2d().direct_space_state
+	# use global coordinates, not local to node
+	var query := PhysicsRayQueryParameters2D.create(global_position, global_position - get_wall_normal() * (($CollisionShape2D.shape as RectangleShape2D).size.x/1 + 1))
+	var result := space_state.intersect_ray(query)
+	# if result:
+	# 	print(result)
+	return result.size() > 0
+
+func is_mostly_on_ceiling():
+	if !is_on_ceiling():
+		return false
+
+	var space_state := get_world_2d().direct_space_state
+	# use global coordinates, not local to node
+	var query := PhysicsRayQueryParameters2D.create(global_position, global_position + Vector2(0, -($CollisionShape2D.shape as RectangleShape2D).size.y/1 + 1))
+	var result := space_state.intersect_ray(query)
+	# if result:
+	# 	print(result)
+	return result.size() > 0
+
+# func _on_animated_sprite_2d_animation_finished() -> void:
+#     PlayerGlobals.is_attacking = false
