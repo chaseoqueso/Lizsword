@@ -45,7 +45,7 @@ func _ready() -> void:
 	current_coyote_time = 0
 	current_wall_coyote_time = 0
 	was_on_floor = false
-	PlayerGlobals.player_ref = self
+	Globals.player_ref = self
 
 func _process(delta: float) -> void:
 	var inputX := Input.get_action_strength("right") - Input.get_action_strength("left")
@@ -233,17 +233,13 @@ func _physics_process(delta: float) -> void:
 					
 					rotation = 0
 					velocity = -collision.get_normal() * 10
-					move_and_slide()
-					wall_normal = get_wall_normal()
-					# print(current_state)
-					# print(velocity)
-					# print(wall_normal)
+					move_and_collide(velocity)
+					wall_normal = collision.get_normal()
 					break
-
 
 func _input(event):
 	if event.is_action_pressed("attack"):
-		# PlayerGlobals.is_attacking = true
+		# Globals.is_attacking = true
 		change_state(PlayerState.CHARGING)
 	elif event.is_action_released("attack") and current_state == PlayerState.CHARGING:     # If we are in the charge state but attack is not pressed, launch
 		velocity = get_local_mouse_position().normalized() * lerpf(min_launch_velocity, max_launch_velocity, current_charge)
@@ -338,4 +334,4 @@ func is_mostly_on_ceiling():
 	return result.size() > 0
 
 # func _on_animated_sprite_2d_animation_finished() -> void:
-#     PlayerGlobals.is_attacking = false
+#     Globals.is_attacking = false
