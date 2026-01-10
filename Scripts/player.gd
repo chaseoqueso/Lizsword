@@ -25,7 +25,12 @@ extends CharacterBody2D
 @export var final_bounce_velocity: float = 200
 @export var air_charge_slowdown_factor: float = 0.5
 
-enum PlayerState { IDLE, RUNNING, CHARGING, LAUNCHING, WALL_CLIMB, CEIL_CLIMB }
+@export_group("Grappling")
+@export var outer_grapple_range: float = 320
+@export var target_grapple_range: float = 160
+@export var grapple_reel_velocity: float = 320
+
+enum PlayerState { IDLE, RUNNING, CHARGING, LAUNCHING, WALL_CLIMB, CEIL_CLIMB, GRAPPLING }
 
 var current_state: PlayerState
 var remaining_bounces: int
@@ -35,6 +40,8 @@ var current_wall_coyote_time: float
 var wall_normal: Vector2
 var air_charge_speed: float
 var was_on_floor: bool
+var grapple_point: Area2D
+var grapple_angular_velocity: float
 
 
 func _ready() -> void:
@@ -45,6 +52,8 @@ func _ready() -> void:
 	current_coyote_time = 0
 	current_wall_coyote_time = 0
 	was_on_floor = false
+	grapple_point = null
+	grapple_angular_velocity = 0
 	Globals.player_ref = self
 
 func _process(delta: float) -> void:
@@ -61,6 +70,10 @@ func _process(delta: float) -> void:
 	var reset_flip_v := true
 	var should_flip_h := false
 
+	if current_state != PlayerState.GRAPPLING \
+	   and Input.is_action_pressed("grapple") \
+	   and try_grapple(get_global_mouse_position()):
+		change_state(PlayerState.GRAPPLING)
 	if current_state == PlayerState.CHARGING:
 		if current_charge < 1:
 			$AnimatedSprite2D.play("charge")
@@ -143,6 +156,22 @@ func _physics_process(delta: float) -> void:
 				apply_friction.call(true)
 			else:
 				air_charge_speed = -1
+
+	elif current_state == PlayerState.GRAPPLING and grapple_point != null:
+		var from_grapple_to_player := global_position - grapple_point.global_position 
+		var radius := from_grapple_to_player.length()
+
+		if !is_equal_approx(radius, target_grapple_range):
+			if radius < target_grapple_range:
+				radius = min(radius + grapple_reel_velocity*delta, target_grapple_range)
+			else:
+				radius = max(radius - grapple_reel_velocity*delta, target_grapple_range)
+
+			grapple_angular_velocity *= from_grapple_to_player.length() / radius
+
+		var new_angle := from_grapple_to_player.angle() + grapple_angular_velocity * delta
+		var new_pos := grapple_point.global_position + Vector2.from_angle(new_angle) * radius
+		velocity = (new_pos - global_position)/delta
 
 	elif is_climbing():
 		# Always allow movement in all directions while climbing,
@@ -259,11 +288,9 @@ func _input(event):
 		$AnimatedSprite2D.play("jump")
 		change_state(PlayerState.IDLE)
 
-	if event.is_action_pressed("grapple"):
-		grapple(get_global_mouse_position())
-		pass
-	elif event.is_action_released("grapple"):
-		pass
+	# Code for checking grapple input is in _process because it checks while key is held
+	if event.is_action_released("grapple"):
+		ungrapple()
 
 
 func change_state(new_state: PlayerState):
@@ -274,9 +301,14 @@ func change_state(new_state: PlayerState):
 	if is_climbing() and new_state == PlayerState.IDLE:
 		current_wall_coyote_time = climb_jump_coyote_time
 	
+
+	# Deal with exiting state
 	if current_state == PlayerState.LAUNCHING:
 		enable_launch_collider(false)
+	elif current_state == PlayerState.GRAPPLING:
+		grapple_angular_velocity = 0
 
+	# Deal with entering state
 	if new_state == PlayerState.WALL_CLIMB:
 		wall_normal = get_wall_normal()
 	elif new_state == PlayerState.CHARGING:
@@ -286,6 +318,12 @@ func change_state(new_state: PlayerState):
 	elif new_state == PlayerState.LAUNCHING:
 		rotation = Vector2.UP.angle_to(velocity)
 		enable_launch_collider()
+	elif new_state == PlayerState.GRAPPLING:
+		# if we just started grappling, set angular velocity based on current velocity
+		var from_player_to_grapple := grapple_point.global_position - global_position
+		var ortho := from_player_to_grapple.orthogonal()
+		var tangential_velocity: float = velocity.project(ortho).length() * sign(velocity.dot(ortho))
+		grapple_angular_velocity = tangential_velocity / from_player_to_grapple.length()
 
 	current_state = new_state
 
@@ -293,18 +331,21 @@ func enable_launch_collider(enabled := true):
 	$CollisionPolygon2D.disabled = !enabled
 	$CollisionShape2D.disabled = enabled
 
-func grapple(grapple_point: Vector2):
-	var space_state := get_world_2d().direct_space_state
-	var query := PhysicsPointQueryParameters2D.new()
-	query.position = grapple_point
+func try_grapple(mouse_position: Vector2):
+	var ray := (mouse_position - position).normalized() * outer_grapple_range
+	var query := PhysicsRayQueryParameters2D.create(position, position+ray, 1 << 2)
 	query.collide_with_areas = true
-	query.collision_mask = 1 << 2
-	var intersections := space_state.intersect_point(query)
-	for hit in intersections:
-		print(hit.collider)
+
+	var space_state := get_world_2d().direct_space_state
+	var hit := space_state.intersect_ray(query)
+	if hit:
+		grapple_point = hit.collider
+		change_state(PlayerState.GRAPPLING)
+	
 
 func ungrapple():
-	print("Release")
+	if current_state == PlayerState.GRAPPLING:
+		change_state(PlayerState.IDLE)
 
 func is_climbing():
 	return current_state == PlayerState.WALL_CLIMB or current_state == PlayerState.CEIL_CLIMB

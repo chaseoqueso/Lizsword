@@ -1154,7 +1154,7 @@ texture = ExtResource("4_uloqi")
 19:12/0 = 0
 
 [sub_resource type="TileSet" id="TileSet_7oift"]
-physics_layer_0/collision_layer = 5
+physics_layer_0/collision_layer = 1
 physics_layer_1/collision_layer = 2
 terrain_set_0/mode = 0
 terrain_set_0/terrain_0/name = "Metal"
