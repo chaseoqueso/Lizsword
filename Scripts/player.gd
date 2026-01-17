@@ -28,7 +28,9 @@ extends CharacterBody2D
 @export_group("Grappling")
 @export var outer_grapple_range: float = 320
 @export var target_grapple_range: float = 160
-@export var grapple_reel_velocity: float = 320
+@export var grapple_reel_in_velocity: float = 320
+@export var grapple_reel_out_velocity: float = 80
+@export var grapple_reel_accel: float = 640
 
 enum PlayerState { IDLE, RUNNING, CHARGING, LAUNCHING, WALL_CLIMB, CEIL_CLIMB, GRAPPLING }
 
@@ -41,9 +43,10 @@ var wall_normal: Vector2
 var air_charge_speed: float
 var was_on_floor: bool
 var grapple_point: Area2D
-var grapple_angular_velocity: float
+var grapple_angular_speed: float
 var prev_grapple_radius: float
 var prev_grapple_velocity: Vector2
+var grapple_reel_speed: float
 
 
 func _ready() -> void:
@@ -55,7 +58,8 @@ func _ready() -> void:
 	current_wall_coyote_time = 0
 	was_on_floor = false
 	grapple_point = null
-	grapple_angular_velocity = 0
+	grapple_angular_speed = 0
+	grapple_reel_speed = 0
 	Globals.player_ref = self
 
 func _process(delta: float) -> void:
@@ -166,23 +170,33 @@ func _physics_process(delta: float) -> void:
 
 		# Override velocity magnitude to be affected only by gravity while grappling
 		velocity = velocity.normalized() * prev_grapple_velocity.length()
+
+		# Apply input and gravity
 		apply_gravity.call()
+
+		print(velocity)
 		
 		var ortho := (-from_grapple_to_player).orthogonal()
 		var tangential_velocity: float = velocity.project(ortho).length() * sign(velocity.dot(ortho))
 
-		# w = v / r
-		grapple_angular_velocity = tangential_velocity / radius
-
 		# Move radius toward the target
 		if !is_equal_approx(radius, target_grapple_range):
 			if radius < target_grapple_range:
-				radius = min(radius + grapple_reel_velocity*delta, target_grapple_range)
+				grapple_reel_speed = min(grapple_reel_speed + grapple_reel_accel * delta, grapple_reel_out_velocity)
+				radius = min(radius + grapple_reel_speed*delta, target_grapple_range)
 			else:
-				radius = max(radius - grapple_reel_velocity*delta, target_grapple_range)
+				grapple_reel_speed = max(grapple_reel_speed - grapple_reel_accel * delta, -grapple_reel_in_velocity)
+				radius = max(radius + grapple_reel_speed*delta, target_grapple_range)
+
+		# If we hit target radius, cancel grapple reeling
+		if is_equal_approx(radius, target_grapple_range):	
+			grapple_reel_speed = 0
+
+		# w = v / r
+		grapple_angular_speed = tangential_velocity / radius
 
 		# Apply a velocity that moves toward target point
-		var new_angle := from_grapple_to_player.angle() + grapple_angular_velocity * delta
+		var new_angle := from_grapple_to_player.angle() + grapple_angular_speed * delta
 		var new_pos := grapple_pos + Vector2.from_angle(new_angle) * radius
 		velocity = (new_pos - global_position).normalized() * velocity.length()
 
@@ -233,11 +247,12 @@ func _physics_process(delta: float) -> void:
 		if is_climbing() and not(is_mostly_on_wall() or is_mostly_on_ceiling()):
 			change_state(PlayerState.IDLE)
 			wall_normal = Vector2.ZERO
-		elif is_mostly_on_wall(): # and (inputX == -get_wall_normal().x or current_state == PlayerState.CEIL_CLIMB):
-			change_state(PlayerState.WALL_CLIMB)
-		elif is_mostly_on_ceiling() and (inputY == 1 or current_state == PlayerState.WALL_CLIMB):
-			change_state(PlayerState.CEIL_CLIMB)
-			wall_normal = Vector2.ZERO
+		elif current_state != PlayerState.CHARGING:
+			if is_mostly_on_wall(): # and (inputX == -get_wall_normal().x or current_state == PlayerState.CEIL_CLIMB):
+				change_state(PlayerState.WALL_CLIMB)
+			elif is_mostly_on_ceiling() and (inputY == 1 or current_state == PlayerState.WALL_CLIMB):
+				change_state(PlayerState.CEIL_CLIMB)
+				wall_normal = Vector2.ZERO
 	else: # Launching
 		var collision := move_and_collide(velocity * delta)
 		while collision:
@@ -322,7 +337,7 @@ func change_state(new_state: PlayerState):
 	if current_state == PlayerState.LAUNCHING:
 		enable_launch_collider(false)
 	elif current_state == PlayerState.GRAPPLING:
-		grapple_angular_velocity = 0
+		grapple_angular_speed = 0
 
 	# Deal with entering state
 	if new_state == PlayerState.WALL_CLIMB:
@@ -339,9 +354,10 @@ func change_state(new_state: PlayerState):
 		var from_player_to_grapple := grapple_point.global_position - global_position
 		var ortho := from_player_to_grapple.orthogonal()
 		var tangential_velocity: float = velocity.project(ortho).length() * sign(velocity.dot(ortho))
-		grapple_angular_velocity = tangential_velocity / from_player_to_grapple.length()
+		grapple_angular_speed = tangential_velocity / from_player_to_grapple.length()
 		prev_grapple_radius = from_player_to_grapple.length()
 		prev_grapple_velocity = velocity
+		grapple_reel_speed = 0
 
 	current_state = new_state
 
