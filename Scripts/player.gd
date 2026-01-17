@@ -42,6 +42,8 @@ var air_charge_speed: float
 var was_on_floor: bool
 var grapple_point: Area2D
 var grapple_angular_velocity: float
+var prev_grapple_radius: float
+var prev_grapple_velocity: Vector2
 
 
 func _ready() -> void:
@@ -72,7 +74,7 @@ func _process(delta: float) -> void:
 
 	if current_state != PlayerState.GRAPPLING \
 	   and Input.is_action_pressed("grapple") \
-	   and try_grapple(get_global_mouse_position()):
+	   and try_grapple(get_global_mouse_position(), delta):
 		change_state(PlayerState.GRAPPLING)
 	if current_state == PlayerState.CHARGING:
 		if current_charge < 1:
@@ -158,20 +160,34 @@ func _physics_process(delta: float) -> void:
 				air_charge_speed = -1
 
 	elif current_state == PlayerState.GRAPPLING and grapple_point != null:
-		var from_grapple_to_player := global_position - grapple_point.global_position 
+		var grapple_pos := grapple_point.global_position
+		var from_grapple_to_player := global_position - grapple_pos
 		var radius := from_grapple_to_player.length()
 
+		# Override velocity magnitude to be affected only by gravity while grappling
+		velocity = velocity.normalized() * prev_grapple_velocity.length()
+		apply_gravity.call()
+		
+		var ortho := (-from_grapple_to_player).orthogonal()
+		var tangential_velocity: float = velocity.project(ortho).length() * sign(velocity.dot(ortho))
+
+		# w = v / r
+		grapple_angular_velocity = tangential_velocity / radius
+
+		# Move radius toward the target
 		if !is_equal_approx(radius, target_grapple_range):
 			if radius < target_grapple_range:
 				radius = min(radius + grapple_reel_velocity*delta, target_grapple_range)
 			else:
 				radius = max(radius - grapple_reel_velocity*delta, target_grapple_range)
 
-			grapple_angular_velocity *= from_grapple_to_player.length() / radius
-
+		# Apply a velocity that moves toward target point
 		var new_angle := from_grapple_to_player.angle() + grapple_angular_velocity * delta
-		var new_pos := grapple_point.global_position + Vector2.from_angle(new_angle) * radius
-		velocity = (new_pos - global_position)/delta
+		var new_pos := grapple_pos + Vector2.from_angle(new_angle) * radius
+		velocity = (new_pos - global_position).normalized() * velocity.length()
+
+		# Update changes to velocity
+		prev_grapple_velocity = velocity
 
 	elif is_climbing():
 		# Always allow movement in all directions while climbing,
@@ -217,7 +233,7 @@ func _physics_process(delta: float) -> void:
 		if is_climbing() and not(is_mostly_on_wall() or is_mostly_on_ceiling()):
 			change_state(PlayerState.IDLE)
 			wall_normal = Vector2.ZERO
-		elif is_mostly_on_wall() and (inputX == -get_wall_normal().x or current_state == PlayerState.CEIL_CLIMB):
+		elif is_mostly_on_wall(): # and (inputX == -get_wall_normal().x or current_state == PlayerState.CEIL_CLIMB):
 			change_state(PlayerState.WALL_CLIMB)
 		elif is_mostly_on_ceiling() and (inputY == 1 or current_state == PlayerState.WALL_CLIMB):
 			change_state(PlayerState.CEIL_CLIMB)
@@ -324,6 +340,8 @@ func change_state(new_state: PlayerState):
 		var ortho := from_player_to_grapple.orthogonal()
 		var tangential_velocity: float = velocity.project(ortho).length() * sign(velocity.dot(ortho))
 		grapple_angular_velocity = tangential_velocity / from_player_to_grapple.length()
+		prev_grapple_radius = from_player_to_grapple.length()
+		prev_grapple_velocity = velocity
 
 	current_state = new_state
 
@@ -331,15 +349,28 @@ func enable_launch_collider(enabled := true):
 	$CollisionPolygon2D.disabled = !enabled
 	$CollisionShape2D.disabled = enabled
 
-func try_grapple(mouse_position: Vector2):
-	var ray := (mouse_position - position).normalized() * outer_grapple_range
-	var query := PhysicsRayQueryParameters2D.create(position, position+ray, 1 << 2)
-	query.collide_with_areas = true
+func try_grapple(mouse_position: Vector2, delta: float):
+	# create a circle with diameter equal to distance traveled
+	var circle := CircleShape2D.new()
+	var last_frame_motion := velocity * delta
+	circle.radius = last_frame_motion.length()/2
 
+	# create a transform with the position to cast from
+	var t := Transform2D(0, position - last_frame_motion/2)
+
+	# create a query with the required properties
+	var query := PhysicsShapeQueryParameters2D.new()
+	query.collide_with_areas = true
+	query.collision_mask = 1 << 2
+	query.motion = (mouse_position - position).normalized() * (outer_grapple_range - last_frame_motion.length()/2)
+	query.shape = circle
+	query.transform = t
+
+	# perform the raycast
 	var space_state := get_world_2d().direct_space_state
-	var hit := space_state.intersect_ray(query)
-	if hit:
-		grapple_point = hit.collider
+	var hits := space_state.intersect_shape(query)
+	if hits:
+		grapple_point = hits[0].collider
 		change_state(PlayerState.GRAPPLING)
 	
 
