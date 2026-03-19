@@ -7,6 +7,7 @@ extends CharacterBody2D
 
 @export_group("Aerial Movement")
 @export var air_accel: float = 500
+@export var drag_coeff: float = 0.5
 @export var gravity: float = 200
 @export var jump_velocity: float = 100
 @export var coyote_time: float = 0.2
@@ -178,22 +179,50 @@ func _physics_process(delta: float) -> void:
 		var tangential_velocity: float = velocity.project(ortho).length() * sign(velocity.dot(ortho))
 		if abs(tangential_velocity) > max_grapple_tang_velocity:
 			tangential_velocity = max_grapple_tang_velocity * sign(tangential_velocity)
+			
+		# w = v / r
+		# applies gravity to angular velocity
+		grapple_ang_velocity = tangential_velocity / radius
 
 		# Move radius toward the target
 		if !is_equal_approx(radius, target_grapple_range):
-			if radius < target_grapple_range:
-				grapple_reel_speed = min(grapple_reel_speed + grapple_reel_accel * delta, grapple_reel_out_velocity)
-				radius = min(radius + grapple_reel_speed*delta, target_grapple_range)
+			# Determine direction to reel
+			var target_grapple_speed := grapple_reel_speed
+			var reel_in = radius > target_grapple_range
+			if reel_in:
+				target_grapple_speed = -grapple_reel_in_velocity
 			else:
-				grapple_reel_speed = max(grapple_reel_speed - grapple_reel_accel * delta, -grapple_reel_in_velocity)
+				target_grapple_speed = grapple_reel_out_velocity
+
+			# Calculate reel speed
+			var speed_diff := target_grapple_speed - grapple_reel_speed
+			var radius_diff_bonus:float = min(abs(target_grapple_range - radius), 5)
+
+			var reel_accel := grapple_reel_accel * radius_diff_bonus * delta
+			if abs(speed_diff) > (reel_accel) / 2:
+				grapple_reel_speed += reel_accel * sign(speed_diff)
+			else:
+				grapple_reel_speed = target_grapple_speed
+
+			# Apply reel speed
+			if reel_in:
 				radius = max(radius + grapple_reel_speed*delta, target_grapple_range)
+			else:
+				radius = min(radius + grapple_reel_speed*delta, target_grapple_range)
 
 		# If we hit target radius, cancel grapple reeling
 		if is_equal_approx(radius, target_grapple_range):	
+			radius = target_grapple_range
 			grapple_reel_speed = 0
 
 		# w = v / r
-		grapple_ang_velocity = tangential_velocity / radius
+		# applies radius change to angular velocity, but only if it speeds us up
+		var new_grapple_ang_velocity := tangential_velocity / radius
+		if abs(new_grapple_ang_velocity) > abs(grapple_ang_velocity):
+			grapple_ang_velocity = new_grapple_ang_velocity
+		
+
+		# print(grapple_ang_velocity * radius)
 
 		# Apply a velocity that moves toward target point
 		var new_angle := from_grapple_to_player.angle() + grapple_ang_velocity * delta
@@ -225,13 +254,18 @@ func _physics_process(delta: float) -> void:
 		if is_on_floor():
 			current_coyote_time = coyote_time
 
-		# Handle movement input
-		if is_on_floor() and inputX == 0:
-			apply_friction.call()
+		# Handle movement input and friction/air resistance
+		velocity.x += inputX * current_accel * delta
+		if is_on_floor(): 
+			if inputX == 0:
+				apply_friction.call()
+			else:
+				if abs(velocity.x) > max_speed:
+					velocity.x = sign(velocity.x) * max_speed
 		else:
-			velocity.x += inputX * current_accel * delta
-			if abs(velocity.x) > max_speed:
-				velocity.x = sign(velocity.x) * max_speed
+			# Simplified drag formula: aD = v^2 * CD
+			var drag := velocity.length()**2 * drag_coeff * 0.001
+			velocity = velocity.normalized() * (velocity.length() - drag * delta)
 
 	# print(velocity)
 
@@ -357,7 +391,8 @@ func change_state(new_state: PlayerState):
 		grapple_ang_velocity = tangential_velocity / from_player_to_grapple.length()
 		prev_grapple_radius = from_player_to_grapple.length()
 		prev_grapple_velocity = velocity
-		grapple_reel_speed = 0
+		grapple_reel_speed = velocity.project(from_player_to_grapple).length() * -sign(velocity.dot(from_player_to_grapple))
+		print(grapple_reel_speed);
 
 	current_state = new_state
 
