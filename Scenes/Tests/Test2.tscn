@@ -1174,10 +1174,11 @@ tile_set = SubResource("TileSet_7oift")
 
 [node name="Player" parent="." instance=ExtResource("5_yxmff")]
 position = Vector2(180, 121)
+air_accel = 300.0
 gravity = 800.0
 jump_velocity = 350.0
-wall_jump_velocity = 350.0
-wall_jump_angle = 65.0
+wall_jump_velocity = 400.0
+wall_jump_angle = 75.0
 
 [node name="Camera2D" type="Camera2D" parent="Player"]
 limit_left = 0
@@ -1190,3 +1191,6 @@ position = Vector2(632, 256)
 
 [node name="GrapplePoint2" parent="." instance=ExtResource("6_n1bll")]
 position = Vector2(960, 256)
+
+[node name="GrapplePoint3" parent="." instance=ExtResource("6_n1bll")]
+position = Vector2(800, 544)

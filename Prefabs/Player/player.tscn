@@ -1,9 +1,10 @@
-[gd_scene load_steps=20 format=3 uid="uid://ctoqfuxwrv33e"]
+[gd_scene load_steps=21 format=3 uid="uid://ctoqfuxwrv33e"]
 
 [ext_resource type="Texture2D" uid="uid://ovagjmcr0fkb" path="res://Art/Character/Sonic Sprites/SonicFall.png" id="1_b30ri"]
 [ext_resource type="Script" uid="uid://c825xmg57rah8" path="res://Scripts/player.gd" id="1_ms580"]
 [ext_resource type="Texture2D" uid="uid://brbxxyq75wx24" path="res://Art/Character/Sonic Sprites/SonicIdle.png" id="1_y5hcb"]
 [ext_resource type="Texture2D" uid="uid://b5wijlgn12tfy" path="res://Art/Character/Sonic Sprites/SonicJump.png" id="2_2nftw"]
+[ext_resource type="PackedScene" uid="uid://d1vnakgs47dg1" path="res://Prefabs/Player/GrappleZap.tscn" id="2_j7wlx"]
 [ext_resource type="Shape2D" uid="uid://chlqr3ux2ffqf" path="res://Prefabs/Player/playerDefaultCollider.tres" id="2_sf0qn"]
 [ext_resource type="Texture2D" uid="uid://66r1fanx82oh" path="res://Art/Character/Sonic Sprites/SonicRun.png" id="3_knrd4"]
 [ext_resource type="Texture2D" uid="uid://5ik8eg8k1fsx" path="res://Art/Character/Sonic Sprites/SonicLaunch.png" id="4_ms580"]
@@ -128,6 +129,7 @@ climb_jump_coyote_time = 0.1
 min_launch_velocity = 300.0
 max_launch_velocity = 750.0
 final_bounce_velocity = 100.0
+grapple_zap_prefab = ExtResource("2_j7wlx")
 
 [node name="CollisionShape2D" type="CollisionShape2D" parent="."]
 shape = ExtResource("2_sf0qn")
